@@ -131,6 +131,7 @@ aegisub_src = files(
     'text_file_writer.cpp',
     'text_selection_controller.cpp',
     'thesaurus.cpp',
+    'theme.cpp',
     'timeedit_ctrl.cpp',
     'toggle_bitmap.cpp',
     'toolbar.cpp',
@@ -188,6 +189,11 @@ elif host_machine.system() == 'windows'
         deps += cc.find_library('dwrite', required: true)
     else
         error('Missing Windows SDK DirectWrite Library (dwrite.h / dwrite.lib)')
+    endif
+    if cc.has_header('dwmapi.h')
+        deps += cc.find_library('dwmapi', required: true)
+    else
+        error('Missing Windows SDK Desktop Window Manager Library (dwmapi.h / dwmapi.lib)')
     endif
 
     res_inc = include_directories('bitmaps/windows')

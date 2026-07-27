@@ -270,6 +270,11 @@ void Video(wxTreebook *book, Preferences *parent) {
 void Interface(wxTreebook *book, Preferences *parent) {
 	auto p = new OptionPage(book, parent, _("Interface"));
 
+	auto appearance = p->PageSizer(_("Appearance"));
+	const wxString appearance_arr[] = { _("Follow system"), _("Light"), _("Dark") };
+	wxArrayString appearance_modes(3, appearance_arr);
+	p->OptionChoice(appearance, _("Theme (requires restart for full effect)"), appearance_modes, "App/Appearance");
+
 	auto edit_box = p->PageSizer(_("Edit Box"));
 	p->OptionAdd(edit_box, _("Enable call tips"), "App/Call Tips");
 	p->OptionAdd(edit_box, _("Overwrite in time boxes"), "Subtitle/Time Edit/Insert Mode");

@@ -8,6 +8,7 @@
 			"Save Every Seconds" : 60,
 			"Save on Every Change" : false
 		},
+		"Appearance" : 0,
 		"Call Tips" : false,
 		"First Start" : true,
 		"Hotkey Migrations" : [{"string": "placeholder since empty arrays aren't supported"}],
