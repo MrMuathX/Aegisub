@@ -53,6 +53,17 @@ if ($gitVersionString -eq $version['BUILD_GIT_VERSION_STRING']) {
   exit 0
 }
 
+# Defaults for checkouts without a semver tag (e.g. forks that don't have the
+# release tags). This mirrors tools/version.sh, which always defines these so
+# that src/res/res.rc can compile. Without them the Windows resource compiler
+# fails with "RC2104: undefined keyword or key name: RESOURCE_BASE_VERSION".
+if (-not $version.ContainsKey('INSTALLER_VERSION')) {
+  $version['INSTALLER_VERSION'] = '0.0.0'
+}
+if (-not $version.ContainsKey('RESOURCE_BASE_VERSION')) {
+  $version['RESOURCE_BASE_VERSION'] = @(0, 0, 0)
+}
+
 if ($exactGitTag -match $semVerMatch) {
   $version['TAGGED_RELEASE'] = $true
   $version['RESOURCE_BASE_VERSION'] = $Matches[1..3]
