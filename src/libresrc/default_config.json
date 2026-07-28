@@ -94,6 +94,26 @@
 	},
 
 
+	"AI" : {
+		"Provider" : "Ollama",
+		"Model" : "",
+		"Scope" : 0,
+		"Endpoints" : {
+			"OpenAI" : "https://api.openai.com/v1",
+			"OpenRouter" : "https://openrouter.ai/api/v1",
+			"Anthropic" : "https://api.anthropic.com/v1",
+			"Google" : "https://generativelanguage.googleapis.com/v1beta",
+			"Ollama" : "http://localhost:11434/v1"
+		},
+		"Keys" : {
+			"OpenAI" : "",
+			"OpenRouter" : "",
+			"Anthropic" : "",
+			"Google" : ""
+		}
+	},
+
+
 	"Automation" : {
 		"Autoreload Mode" : 1,
 		"Trace Level" : 3

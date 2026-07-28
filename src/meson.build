@@ -3,6 +3,7 @@ subdir('libresrc')
 aegisub_src = files(
     'MatroskaParser.c',
     'aegisublocale.cpp',
+    'ai_client.cpp',
     'ass_attachment.cpp',
     'ass_dialogue.cpp',
     'ass_entry.cpp',
@@ -37,6 +38,7 @@ aegisub_src = files(
     'charset_detect.cpp',
     'colorspace.cpp',
     'colour_button.cpp',
+    'command/ai.cpp',
     'command/app.cpp',
     'command/audio.cpp',
     'command/automation.cpp',
@@ -55,6 +57,7 @@ aegisub_src = files(
     'compat.cpp',
     'context.cpp',
     'dialog_about.cpp',
+    'dialog_ai_assistant.cpp',
     'dialog_attachments.cpp',
     'dialog_automation.cpp',
     'dialog_autosave.cpp',
