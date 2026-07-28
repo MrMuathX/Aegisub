@@ -371,7 +371,6 @@ int AegisubApp::OnExit() {
 
 agi::Context& AegisubApp::NewProjectContext() {
 	auto frame = new FrameMain;
-	theme::SetupWindow(frame);
 	frame->Bind(wxEVT_DESTROY, [=, this](wxWindowDestroyEvent& evt) {
 		if (evt.GetWindow() != frame) {
 			evt.Skip();

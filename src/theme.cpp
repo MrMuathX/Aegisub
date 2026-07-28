@@ -23,24 +23,17 @@
 #include <libaegisub/color.h>
 #include <libaegisub/signal.h>
 
+#include <wx/app.h>
 #include <wx/settings.h>
 #include <wx/toplevel.h>
 #include <wx/window.h>
 
-#ifdef __WXMSW__
-#include <wx/msw/wrapwin.h>
-#include <dwmapi.h>
-// DWMWA_USE_IMMERSIVE_DARK_MODE is only defined in newer Windows SDK headers.
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
-#endif
-
 namespace {
-	/// A colour option and its light/dark values. When the appearance is
-	/// changed we only overwrite the options that Aegisub draws itself; the
-	/// audio display, video overlays and visual tools keep their own palettes
-	/// (they already render onto dark surfaces).
+	/// A colour option and its light/dark values. These are the surfaces that
+	/// Aegisub draws itself, so wxWidgets' native dark mode does not touch them
+	/// and we recolour them via the options they already read. The audio
+	/// display, video overlays and visual tools keep their own palettes (they
+	/// already render onto dark surfaces).
 	struct ThemeColor {
 		const char *option;
 		const char *light;
@@ -95,27 +88,33 @@ namespace {
 			OPT_SET(c.option)->SetColor(agi::Color(dark ? c.dark : c.light));
 	}
 
-	void ApplyColors(wxWindow *window, bool dark) {
-		// wxWidgets 3.2 does not theme native controls on Windows, so paint the
-		// window chrome ourselves. On GTK/macOS the system already themes the
-		// controls, so switching back to a null colour restores the default.
-		if (dark) {
-			window->SetBackgroundColour(wxColour(32, 32, 32));
-			window->SetForegroundColour(wxColour(230, 230, 230));
+	// Ask wxWidgets to theme all native controls (menu bar, dialogs, popup
+	// menus, buttons, scrollbars, title bar, ...). This is only available in
+	// wxWidgets 3.3+; older versions fall back to the palette above plus
+	// whatever the platform theme provides.
+	void ApplyNativeAppearance() {
+#if wxCHECK_VERSION(3, 3, 0)
+		if (!wxTheApp) return;
+		switch (current_setting()) {
+			case theme::Appearance::Light:
+				wxTheApp->SetAppearance(wxApp::Appearance::Light);
+				break;
+			case theme::Appearance::Dark:
+				wxTheApp->SetAppearance(wxApp::Appearance::Dark);
+				break;
+			case theme::Appearance::System:
+			default:
+				wxTheApp->SetAppearance(wxApp::Appearance::System);
+				break;
 		}
-		else {
-			window->SetBackgroundColour(wxNullColour);
-			window->SetForegroundColour(wxNullColour);
-		}
-
-		for (wxWindow *child : window->GetChildren())
-			ApplyColors(child, dark);
+#endif
 	}
 
 	void OnAppearanceChanged() {
 		ApplyPalette(theme::IsDark());
+		ApplyNativeAppearance();
 		for (wxWindow *w : wxTopLevelWindows)
-			theme::SetupWindow(w);
+			w->Refresh();
 	}
 }
 
@@ -132,23 +131,7 @@ namespace theme {
 
 	void Init() {
 		ApplyPalette(IsDark());
+		ApplyNativeAppearance();
 		appearance_slot = OPT_SUB("App/Appearance", [](agi::OptionValue const&) { OnAppearanceChanged(); });
-	}
-
-	void SetupWindow(wxWindow *window) {
-		if (!window) return;
-
-		const bool dark = IsDark();
-
-#ifdef __WXMSW__
-		if (auto tlw = dynamic_cast<wxTopLevelWindow *>(window)) {
-			BOOL value = dark ? TRUE : FALSE;
-			::DwmSetWindowAttribute(static_cast<HWND>(tlw->GetHWND()), DWMWA_USE_IMMERSIVE_DARK_MODE,
-			                        &value, sizeof(value));
-		}
-#endif
-
-		ApplyColors(window, dark);
-		window->Refresh();
 	}
 }

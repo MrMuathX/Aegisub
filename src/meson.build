@@ -190,11 +190,6 @@ elif host_machine.system() == 'windows'
     else
         error('Missing Windows SDK DirectWrite Library (dwrite.h / dwrite.lib)')
     endif
-    if cc.has_header('dwmapi.h')
-        deps += cc.find_library('dwmapi', required: true)
-    else
-        error('Missing Windows SDK Desktop Window Manager Library (dwmapi.h / dwmapi.lib)')
-    endif
 
     res_inc = include_directories('bitmaps/windows')
     res_dep_files = files(

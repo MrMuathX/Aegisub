@@ -31,13 +31,8 @@ namespace theme {
 	bool IsDark();
 
 	/// Apply the palette for the current "App/Appearance" setting to the
-	/// colour options and subscribe to future changes. Call once after the
-	/// options have been loaded and before any windows are created.
+	/// colour options, set the native wxWidgets appearance (3.3+), and
+	/// subscribe to future changes. Call once after the options have been
+	/// loaded and before any windows are created.
 	void Init();
-
-	/// Apply the current appearance to a top-level window and its children
-	/// (background/foreground colours plus, on Windows, the dark title bar).
-	/// Safe to call repeatedly; a no-op contribution on platforms that theme
-	/// native controls themselves.
-	void SetupWindow(wxWindow *window);
 }
