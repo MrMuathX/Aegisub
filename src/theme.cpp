@@ -111,8 +111,10 @@ namespace {
 	}
 
 	void OnAppearanceChanged() {
-		ApplyPalette(theme::IsDark());
+		// Set the native appearance first so that IsDark() reflects it when we
+		// resolve the palette for "System".
 		ApplyNativeAppearance();
+		ApplyPalette(theme::IsDark());
 		for (wxWindow *w : wxTopLevelWindows)
 			w->Refresh();
 	}
@@ -130,8 +132,10 @@ namespace theme {
 	}
 
 	void Init() {
-		ApplyPalette(IsDark());
+		// Set the native appearance first so that IsDark() reflects it when we
+		// resolve the palette for "System".
 		ApplyNativeAppearance();
+		ApplyPalette(IsDark());
 		appearance_slot = OPT_SUB("App/Appearance", [](agi::OptionValue const&) { OnAppearanceChanged(); });
 	}
 }

@@ -14,6 +14,7 @@
 
 #include "libresrc.h"
 
+#include <algorithm>
 #include <map>
 
 #include <wx/bitmap.h>
@@ -23,6 +24,45 @@
 #include <wx/image.h>
 #include <wx/intl.h>
 #include <wx/mstream.h>
+#include <wx/settings.h>
+
+namespace {
+	// Icons are authored as dark line-art for a light UI. In dark mode those
+	// monochrome glyphs become invisible, so invert the (near-)grayscale ones.
+	// Coloured icons are left untouched.
+	bool image_is_grayscale(const wxImage &img) {
+		const unsigned char *data = img.GetData();
+		if (!data) return false;
+		const unsigned char *alpha = img.HasAlpha() ? img.GetAlpha() : nullptr;
+		const int n = img.GetWidth() * img.GetHeight();
+		for (int i = 0; i < n; ++i) {
+			if (alpha && alpha[i] < 8) continue; // ignore transparent pixels
+			const unsigned char r = data[3 * i], g = data[3 * i + 1], b = data[3 * i + 2];
+			const unsigned char mx = std::max({r, g, b});
+			const unsigned char mn = std::min({r, g, b});
+			if (mx - mn > 24) return false;
+		}
+		return true;
+	}
+
+	void invert_luminance(wxImage &img) {
+		unsigned char *data = img.GetData();
+		if (!data) return;
+		const int n = img.GetWidth() * img.GetHeight() * 3;
+		for (int i = 0; i < n; ++i)
+			data[i] = 255 - data[i];
+	}
+
+	wxImage load_res_image(const unsigned char *buff, size_t size, int dir, bool dark) {
+		wxMemoryInputStream mem(buff, size);
+		wxImage img(mem);
+		if (dir == wxLayout_RightToLeft)
+			img = img.Mirror();
+		if (dark && image_is_grayscale(img))
+			invert_luminance(img);
+		return img;
+	}
+}
 
 wxBitmap libresrc_getimage(const unsigned char *buff, size_t size, int dir) {
 	wxMemoryInputStream mem(buff, size);
@@ -39,9 +79,11 @@ wxIcon libresrc_geticon(const unsigned char *buff, size_t size) {
 }
 
 wxBitmapBundle libresrc_getbitmapbundle(const LibresrcBlob *images, size_t count, int height, int dir) {
+	const bool dark = wxSystemSettings::GetAppearance().IsDark();
+
 	// This function should only ever be called on the GUI thread but declaring this thread_local is the safe way
-	thread_local std::map<std::tuple<const LibresrcBlob *, int, int>, wxBitmapBundle> cache;
-	auto key = std::make_tuple(images, height, dir);
+	thread_local std::map<std::tuple<const LibresrcBlob *, int, int, bool>, wxBitmapBundle> cache;
+	auto key = std::make_tuple(images, height, dir, dark);
 
 	if (auto cached = cache.find(key); cached != cache.end()) {
 		return cached->second;
@@ -50,7 +92,7 @@ wxBitmapBundle libresrc_getbitmapbundle(const LibresrcBlob *images, size_t count
 	wxVector<wxBitmap> bitmaps;
 	bitmaps.reserve(count);
 	for (size_t i = 0; i < count; i++) {
-		bitmaps.push_back(libresrc_getimage(images[i].data, images[i].size, dir));
+		bitmaps.push_back(wxBitmap(load_res_image(images[i].data, images[i].size, dir, dark)));
 		bitmaps.back().SetScaleFactor(double(images[i].scale) / height);
 	}
 
