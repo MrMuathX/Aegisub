@@ -31,30 +31,26 @@ namespace {
 	// the OS itself is in light mode.
 	bool g_dark_mode = false;
 
-	// Icons are authored as dark line-art for a light UI. In dark mode those
-	// monochrome glyphs become invisible, so invert the (near-)grayscale ones.
-	// Coloured icons are left untouched.
-	bool image_is_grayscale(const wxImage &img) {
-		const unsigned char *data = img.GetData();
-		if (!data) return false;
-		const unsigned char *alpha = img.HasAlpha() ? img.GetAlpha() : nullptr;
-		const int n = img.GetWidth() * img.GetHeight();
-		for (int i = 0; i < n; ++i) {
-			if (alpha && alpha[i] < 8) continue; // ignore transparent pixels
-			const unsigned char r = data[3 * i], g = data[3 * i + 1], b = data[3 * i + 2];
-			const unsigned char mx = std::max({r, g, b});
-			const unsigned char mn = std::min({r, g, b});
-			if (mx - mn > 24) return false;
-		}
-		return true;
-	}
-
-	void invert_luminance(wxImage &img) {
+	// Icons are authored as dark line-art on a light background for a light UI,
+	// so in dark mode the black glyphs and white fills become wrong. Adapt each
+	// icon per pixel: invert the lightness of (near-)grayscale pixels -- black
+	// line-art becomes light, white fills become dark -- while leaving coloured
+	// pixels (e.g. the swatch on a set-colour button) untouched so they keep
+	// meaning. This handles pure-monochrome and mixed icons alike.
+	void adapt_icon_for_dark(wxImage &img) {
 		unsigned char *data = img.GetData();
 		if (!data) return;
-		const int n = img.GetWidth() * img.GetHeight() * 3;
-		for (int i = 0; i < n; ++i)
-			data[i] = 255 - data[i];
+		const int n = img.GetWidth() * img.GetHeight();
+		for (int i = 0; i < n; ++i) {
+			unsigned char &r = data[3 * i], &g = data[3 * i + 1], &b = data[3 * i + 2];
+			const unsigned char mx = std::max({r, g, b});
+			const unsigned char mn = std::min({r, g, b});
+			if (mx - mn <= 40) { // low-saturation / grayish pixel
+				r = 255 - r;
+				g = 255 - g;
+				b = 255 - b;
+			}
+		}
 	}
 
 	wxImage load_res_image(const unsigned char *buff, size_t size, int dir, bool dark) {
@@ -62,8 +58,8 @@ namespace {
 		wxImage img(mem);
 		if (dir == wxLayout_RightToLeft)
 			img = img.Mirror();
-		if (dark && image_is_grayscale(img))
-			invert_luminance(img);
+		if (dark)
+			adapt_icon_for_dark(img);
 		return img;
 	}
 }
