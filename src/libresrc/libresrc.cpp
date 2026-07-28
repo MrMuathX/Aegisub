@@ -24,9 +24,13 @@
 #include <wx/image.h>
 #include <wx/intl.h>
 #include <wx/mstream.h>
-#include <wx/settings.h>
 
 namespace {
+	// UI dark-mode flag, set by the theme code. Kept independent of
+	// wxSystemSettings so that an explicit "Dark" choice is honoured even when
+	// the OS itself is in light mode.
+	bool g_dark_mode = false;
+
 	// Icons are authored as dark line-art for a light UI. In dark mode those
 	// monochrome glyphs become invisible, so invert the (near-)grayscale ones.
 	// Coloured icons are left untouched.
@@ -64,6 +68,10 @@ namespace {
 	}
 }
 
+void libresrc_set_dark(bool dark) {
+	g_dark_mode = dark;
+}
+
 wxBitmap libresrc_getimage(const unsigned char *buff, size_t size, int dir) {
 	wxMemoryInputStream mem(buff, size);
 	if (dir != wxLayout_RightToLeft)
@@ -79,7 +87,7 @@ wxIcon libresrc_geticon(const unsigned char *buff, size_t size) {
 }
 
 wxBitmapBundle libresrc_getbitmapbundle(const LibresrcBlob *images, size_t count, int height, int dir) {
-	const bool dark = wxSystemSettings::GetAppearance().IsDark();
+	const bool dark = g_dark_mode;
 
 	// This function should only ever be called on the GUI thread but declaring this thread_local is the safe way
 	thread_local std::map<std::tuple<const LibresrcBlob *, int, int, bool>, wxBitmapBundle> cache;

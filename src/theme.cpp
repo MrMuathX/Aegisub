@@ -18,12 +18,14 @@
 
 #include "include/aegisub/theme.h"
 
+#include "libresrc/libresrc.h"
 #include "options.h"
 
 #include <libaegisub/color.h>
 #include <libaegisub/signal.h>
 
 #include <wx/app.h>
+#include <wx/colour.h>
 #include <wx/settings.h>
 #include <wx/toplevel.h>
 #include <wx/window.h>
@@ -83,6 +85,11 @@ namespace {
 		return static_cast<theme::Appearance>(OPT_GET("App/Appearance")->GetInt());
 	}
 
+	bool colour_is_dark(wxColour const& c) {
+		// Rec. 601 luma; below the midpoint counts as a dark background.
+		return c.IsOk() && (c.Red() * 299 + c.Green() * 587 + c.Blue() * 114) / 1000 < 128;
+	}
+
 	void ApplyPalette(bool dark) {
 		for (auto const& c : palette)
 			OPT_SET(c.option)->SetColor(agi::Color(dark ? c.dark : c.light));
@@ -112,9 +119,11 @@ namespace {
 
 	void OnAppearanceChanged() {
 		// Set the native appearance first so that IsDark() reflects it when we
-		// resolve the palette for "System".
+		// resolve the palette and icon state for "System".
 		ApplyNativeAppearance();
-		ApplyPalette(theme::IsDark());
+		const bool dark = theme::IsDark();
+		libresrc_set_dark(dark);
+		ApplyPalette(dark);
 		for (wxWindow *w : wxTopLevelWindows)
 			w->Refresh();
 	}
@@ -127,15 +136,20 @@ namespace theme {
 			case Appearance::Dark:  return true;
 			case Appearance::System:
 			default:
-				return wxSystemSettings::GetAppearance().IsDark();
+				// Resolve against the effective window colour, which reflects
+				// the native appearance set by ApplyNativeAppearance() (and the
+				// OS setting) more reliably than GetAppearance().IsDark().
+				return colour_is_dark(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
 		}
 	}
 
 	void Init() {
 		// Set the native appearance first so that IsDark() reflects it when we
-		// resolve the palette for "System".
+		// resolve the palette and icon state for "System".
 		ApplyNativeAppearance();
-		ApplyPalette(IsDark());
+		const bool dark = IsDark();
+		libresrc_set_dark(dark);
+		ApplyPalette(dark);
 		appearance_slot = OPT_SUB("App/Appearance", [](agi::OptionValue const&) { OnAppearanceChanged(); });
 	}
 }

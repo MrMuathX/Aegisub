@@ -31,6 +31,12 @@ class wxBitmapBundle;
 class wxIcon;
 class wxIconBundle;
 
+// Set whether the UI is in dark mode. When enabled, (near-)grayscale icons
+// loaded through libresrc_getbitmapbundle are luminance-inverted so dark
+// line-art stays visible on a dark background. Call before the toolbars and
+// bitmap buttons are created.
+void libresrc_set_dark(bool dark);
+
 wxBitmap libresrc_getimage(const unsigned char *image, size_t size, int dir=0);
 wxIcon libresrc_geticon(const unsigned char *image, size_t size);
 #define GETIMAGE(a) libresrc_getimage(a, sizeof(a))
