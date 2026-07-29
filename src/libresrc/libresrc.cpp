@@ -14,7 +14,6 @@
 
 #include "libresrc.h"
 
-#include <algorithm>
 #include <map>
 
 #include <wx/bitmap.h>
@@ -26,46 +25,13 @@
 #include <wx/mstream.h>
 
 namespace {
-	// UI dark-mode flag, set by the theme code. Kept independent of
-	// wxSystemSettings so that an explicit "Dark" choice is honoured even when
-	// the OS itself is in light mode.
-	bool g_dark_mode = false;
-
-	// Icons are authored as dark line-art on a light background for a light UI,
-	// so in dark mode the black glyphs and white fills become wrong. Adapt each
-	// icon per pixel: invert the lightness of (near-)grayscale pixels -- black
-	// line-art becomes light, white fills become dark -- while leaving coloured
-	// pixels (e.g. the swatch on a set-colour button) untouched so they keep
-	// meaning. This handles pure-monochrome and mixed icons alike.
-	void adapt_icon_for_dark(wxImage &img) {
-		unsigned char *data = img.GetData();
-		if (!data) return;
-		const int n = img.GetWidth() * img.GetHeight();
-		for (int i = 0; i < n; ++i) {
-			unsigned char &r = data[3 * i], &g = data[3 * i + 1], &b = data[3 * i + 2];
-			const unsigned char mx = std::max({r, g, b});
-			const unsigned char mn = std::min({r, g, b});
-			if (mx - mn <= 40) { // low-saturation / grayish pixel
-				r = 255 - r;
-				g = 255 - g;
-				b = 255 - b;
-			}
-		}
-	}
-
-	wxImage load_res_image(const unsigned char *buff, size_t size, int dir, bool dark) {
+	wxImage load_res_image(const unsigned char *buff, size_t size, int dir) {
 		wxMemoryInputStream mem(buff, size);
 		wxImage img(mem);
 		if (dir == wxLayout_RightToLeft)
 			img = img.Mirror();
-		if (dark)
-			adapt_icon_for_dark(img);
 		return img;
 	}
-}
-
-void libresrc_set_dark(bool dark) {
-	g_dark_mode = dark;
 }
 
 wxBitmap libresrc_getimage(const unsigned char *buff, size_t size, int dir) {
@@ -83,11 +49,9 @@ wxIcon libresrc_geticon(const unsigned char *buff, size_t size) {
 }
 
 wxBitmapBundle libresrc_getbitmapbundle(const LibresrcBlob *images, size_t count, int height, int dir) {
-	const bool dark = g_dark_mode;
-
 	// This function should only ever be called on the GUI thread but declaring this thread_local is the safe way
-	thread_local std::map<std::tuple<const LibresrcBlob *, int, int, bool>, wxBitmapBundle> cache;
-	auto key = std::make_tuple(images, height, dir, dark);
+	thread_local std::map<std::tuple<const LibresrcBlob *, int, int>, wxBitmapBundle> cache;
+	auto key = std::make_tuple(images, height, dir);
 
 	if (auto cached = cache.find(key); cached != cache.end()) {
 		return cached->second;
@@ -96,7 +60,7 @@ wxBitmapBundle libresrc_getbitmapbundle(const LibresrcBlob *images, size_t count
 	wxVector<wxBitmap> bitmaps;
 	bitmaps.reserve(count);
 	for (size_t i = 0; i < count; i++) {
-		bitmaps.push_back(wxBitmap(load_res_image(images[i].data, images[i].size, dir, dark)));
+		bitmaps.push_back(wxBitmap(load_res_image(images[i].data, images[i].size, dir)));
 		bitmaps.back().SetScaleFactor(double(images[i].scale) / height);
 	}
 

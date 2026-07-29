@@ -59,7 +59,9 @@
         "subtitle/spellcheck",
         "",
         "app/options",
-        "grid/tag/cycle_hiding"
+        "grid/tag/cycle_hiding",
+        "",
+        "tool/ai_assistant"
     ],
     "video" : [
         "video/play",

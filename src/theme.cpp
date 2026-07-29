@@ -18,7 +18,6 @@
 
 #include "include/aegisub/theme.h"
 
-#include "libresrc/libresrc.h"
 #include "options.h"
 
 #include <libaegisub/color.h>
@@ -121,9 +120,7 @@ namespace {
 		// Set the native appearance first so that IsDark() reflects it when we
 		// resolve the palette and icon state for "System".
 		ApplyNativeAppearance();
-		const bool dark = theme::IsDark();
-		libresrc_set_dark(dark);
-		ApplyPalette(dark);
+		ApplyPalette(theme::IsDark());
 		for (wxWindow *w : wxTopLevelWindows)
 			w->Refresh();
 	}
@@ -147,9 +144,7 @@ namespace theme {
 		// Set the native appearance first so that IsDark() reflects it when we
 		// resolve the palette and icon state for "System".
 		ApplyNativeAppearance();
-		const bool dark = IsDark();
-		libresrc_set_dark(dark);
-		ApplyPalette(dark);
+		ApplyPalette(IsDark());
 		appearance_slot = OPT_SUB("App/Appearance", [](agi::OptionValue const&) { OnAppearanceChanged(); });
 	}
 }

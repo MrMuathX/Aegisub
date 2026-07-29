@@ -20,12 +20,14 @@
 
 #include "../dialog_ai_assistant.h"
 #include "../include/aegisub/context.h"
+#include "../libresrc/libresrc.h"
 
 namespace {
 	using cmd::Command;
 
 	struct tool_ai_assistant final : public Command {
 		CMD_NAME("tool/ai_assistant")
+		CMD_ICON(ai_assistant_toolbutton)
 		STR_MENU("&AI Assistant...")
 		STR_DISP("AI Assistant")
 		STR_HELP("Edit subtitles with an AI model")
