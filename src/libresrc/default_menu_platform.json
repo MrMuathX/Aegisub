@@ -18,6 +18,7 @@
         { "command" : "subtitle/open/autosave" },
         { "command" : "subtitle/save" },
         { "command" : "subtitle/save/as" },
+        { "command" : "subtitle/save/srt" },
         { "command" : "tool/export" },
         { "recent" : "Subtitle" },
         {},
