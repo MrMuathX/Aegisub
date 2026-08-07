@@ -256,6 +256,8 @@ jobs:
           path: artifacts
 
       - name: Collect release files
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -e
           mkdir -p release
@@ -264,6 +266,14 @@ jobs:
           if [ -z "$(ls -A release)" ]; then
             echo "No build artifacts were produced; nothing to release." >&2
             exit 1
+          fi
+          # Untagged builds name their outputs after the branch/commit; give the
+          # Windows assets predictable, tag-based names instead.
+          for f in release/Aegisub-*.exe; do
+            [ -e "$f" ] && mv -n "$f" "release/Aegisub-${RELEASE_TAG}-setup.exe" || true
+          done
+          if [ -e release/aegisub-portable-64.zip ]; then
+            mv -n release/aegisub-portable-64.zip "release/Aegisub-${RELEASE_TAG}-portable-64.zip"
           fi
           ls -lh release
 
