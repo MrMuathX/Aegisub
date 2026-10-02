@@ -37,6 +37,7 @@
 #include <wx/combobox.h>
 #include <wx/dialog.h>
 #include <wx/gauge.h>
+#include <wx/listctrl.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
@@ -74,6 +75,15 @@ namespace {
 		return s;
 	}
 
+	/// One processed line, as shown in the results table.
+	struct LineResult {
+		enum class State { Pending, Unchanged, Applied, Reverted };
+		AssDialogue *line;
+		std::string before;
+		std::string after;
+		State state;
+	};
+
 	class DialogAiAssistant final : public wxDialog {
 		agi::Context *c;
 
@@ -90,6 +100,12 @@ namespace {
 		wxGauge *progress;
 		wxButton *cancel_button;
 		wxStaticText *status;
+		wxListCtrl *results_list;
+		wxButton *revert_selected_button;
+		wxButton *revert_all_button;
+
+		/// Rows of results_list, in the same order. Only touched on the main thread.
+		std::vector<LineResult> results;
 
 		bool busy = false;
 		/// Raised by Stop; read by the background worker and the HTTP client.
@@ -140,10 +156,76 @@ namespace {
 			run_button->Enable(!b);
 			cancel_button->Enable(!b);
 			stop_button->Enable(b);
+			UpdateRevertButtons();
 			if (b) {
 				cancel_requested = false;
 				progress->SetValue(0);
 			}
+		}
+
+		static wxString StateLabel(LineResult::State st) {
+			switch (st) {
+				case LineResult::State::Pending:   return _("Pending");
+				case LineResult::State::Unchanged: return _("Unchanged");
+				case LineResult::State::Applied:   return _("Applied");
+				case LineResult::State::Reverted:  return _("Reverted");
+			}
+			return "";
+		}
+
+		void AddResultRow(LineResult r) {
+			long row = results_list->GetItemCount();
+			results_list->InsertItem(row, wxString::Format("%d", r.line->Row + 1));
+			results_list->SetItem(row, 1, to_wx(r.before));
+			results_list->SetItem(row, 2, to_wx(r.after));
+			results_list->SetItem(row, 3, StateLabel(r.state));
+			results_list->EnsureVisible(row);
+			results.push_back(std::move(r));
+		}
+
+		void SetRowState(size_t row, LineResult::State st) {
+			results[row].state = st;
+			results_list->SetItem((long)row, 3, StateLabel(st));
+		}
+
+		void UpdateRevertButtons() {
+			bool any_applied = false;
+			for (auto const& r : results)
+				any_applied |= r.state == LineResult::State::Applied;
+			revert_all_button->Enable(!busy && any_applied);
+			revert_selected_button->Enable(!busy && any_applied && results_list->GetSelectedItemCount() > 0);
+		}
+
+		/// Restore the original text of the given rows that are currently applied.
+		void Revert(std::vector<size_t> const& rows) {
+			int count = 0;
+			for (size_t row : rows) {
+				if (results[row].state != LineResult::State::Applied) continue;
+				results[row].line->Text = results[row].before;
+				SetRowState(row, LineResult::State::Reverted);
+				++count;
+			}
+			if (count) {
+				c->ass->Commit(_("AI revert"), AssFile::COMMIT_DIAG_TEXT);
+				status->SetLabel(wxString::Format(_("Reverted %d line(s)."), count));
+			}
+			UpdateRevertButtons();
+		}
+
+		void OnRevertSelected(wxCommandEvent&) {
+			if (busy) return;
+			std::vector<size_t> rows;
+			for (long i = results_list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED); i != -1;
+			     i = results_list->GetNextItem(i, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED))
+				rows.push_back((size_t)i);
+			Revert(rows);
+		}
+
+		void OnRevertAll(wxCommandEvent&) {
+			if (busy) return;
+			std::vector<size_t> rows(results.size());
+			for (size_t i = 0; i < rows.size(); ++i) rows[i] = i;
+			Revert(rows);
 		}
 
 		void OnStop(wxCommandEvent&) {
@@ -248,12 +330,13 @@ namespace {
 			sys += system_suffix;
 
 			const int total = (int)lines.size();
+			results.clear();
+			results_list->DeleteAllItems();
 			SetBusy(true);
 			progress->SetRange(total);
 			status->SetLabel(wxString::Format(_("Processing line 1 of %d..."), total));
 
 			agi::dispatch::Background().Async([=, this] {
-				std::vector<std::pair<AssDialogue *, std::string>> edits;
 				std::string error;
 				bool cancelled = false;
 				int done = 0;
@@ -265,10 +348,11 @@ namespace {
 						}
 						std::string in = line->Text.get();
 						std::string out = trim(ai::Chat(cfg, sys, in));
-						if (!out.empty())
-							edits.emplace_back(line, out);
+						bool changed = !out.empty() && out != in;
 						++done;
 						agi::dispatch::Main().Async([=, this] {
+							AddResultRow({line, in, changed ? out : in,
+								changed ? LineResult::State::Pending : LineResult::State::Unchanged});
 							progress->SetValue(done);
 							if (done < total && !cancel_requested)
 								status->SetLabel(wxString::Format(_("Processing line %d of %d..."), done + 1, total));
@@ -282,18 +366,24 @@ namespace {
 					error = e.what();
 				}
 				agi::dispatch::Main().Async([=, this] {
-					// Keep the lines that finished before a stop or error.
-					for (auto& e : edits)
-						e.first->Text = e.second;
-					if (!edits.empty())
+					// Apply every line that finished, even after a stop or error,
+					// as one undo step. Each can still be reverted from the table.
+					int updated = 0;
+					for (size_t i = 0; i < results.size(); ++i) {
+						if (results[i].state != LineResult::State::Pending) continue;
+						results[i].line->Text = results[i].after;
+						SetRowState(i, LineResult::State::Applied);
+						++updated;
+					}
+					if (updated)
 						c->ass->Commit(_("AI edit"), AssFile::COMMIT_DIAG_TEXT);
 
 					if (cancelled)
-						status->SetLabel(wxString::Format(_("Stopped after %d of %d line(s); %d updated."), done, total, (int)edits.size()));
+						status->SetLabel(wxString::Format(_("Stopped after %d of %d line(s); %d updated."), done, total, updated));
 					else if (!error.empty())
-						status->SetLabel(wxString::Format(_("Error after %d of %d line(s); %d updated: %s"), done, total, (int)edits.size(), to_wx(error)));
+						status->SetLabel(wxString::Format(_("Error after %d of %d line(s); %d updated: %s"), done, total, updated, to_wx(error)));
 					else
-						status->SetLabel(wxString::Format(_("Updated %d of %d line(s)."), (int)edits.size(), total));
+						status->SetLabel(wxString::Format(_("Updated %d of %d line(s)."), updated, total));
 					SetBusy(false);
 				});
 			});
@@ -355,6 +445,20 @@ namespace {
 			status = new wxStaticText(this, -1, "");
 			progress = new wxGauge(this, -1, 1, wxDefaultPosition, FromDIP(wxSize(-1, 12)));
 
+			results_list = new wxListCtrl(this, -1, wxDefaultPosition, FromDIP(wxSize(720, 200)), wxLC_REPORT);
+			results_list->AppendColumn(_("#"), wxLIST_FORMAT_RIGHT, FromDIP(45));
+			results_list->AppendColumn(_("Before"), wxLIST_FORMAT_LEFT, FromDIP(280));
+			results_list->AppendColumn(_("After"), wxLIST_FORMAT_LEFT, FromDIP(280));
+			results_list->AppendColumn(_("Status"), wxLIST_FORMAT_LEFT, FromDIP(90));
+			revert_selected_button = new wxButton(this, -1, _("Revert selected"));
+			revert_all_button = new wxButton(this, -1, _("Revert all"));
+			revert_selected_button->Enable(false);
+			revert_all_button->Enable(false);
+			auto revert_sizer = new wxBoxSizer(wxHORIZONTAL);
+			revert_sizer->AddStretchSpacer();
+			revert_sizer->Add(revert_selected_button, wxSizerFlags().Border(wxRIGHT));
+			revert_sizer->Add(revert_all_button);
+
 			auto button_sizer = new wxBoxSizer(wxHORIZONTAL);
 			button_sizer->Add(status, wxSizerFlags(1).Center().Border(wxRIGHT));
 			button_sizer->Add(run_button, wxSizerFlags().Border(wxRIGHT));
@@ -365,6 +469,9 @@ namespace {
 			main_sizer->Add(grid, wxSizerFlags().Expand().Border());
 			main_sizer->Add(new wxStaticText(this, -1, _("Instruction:")), wxSizerFlags().Border(wxLEFT | wxRIGHT));
 			main_sizer->Add(instruction, wxSizerFlags(1).Expand().Border());
+			main_sizer->Add(new wxStaticText(this, -1, _("Results:")), wxSizerFlags().Border(wxLEFT | wxRIGHT));
+			main_sizer->Add(results_list, wxSizerFlags(2).Expand().Border());
+			main_sizer->Add(revert_sizer, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT | wxBOTTOM));
 			main_sizer->Add(progress, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT));
 			main_sizer->Add(button_sizer, wxSizerFlags().Expand().Border());
 			SetSizerAndFit(main_sizer);
@@ -378,6 +485,10 @@ namespace {
 			refresh_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnRefresh, this);
 			run_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnRun, this);
 			stop_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnStop, this);
+			revert_selected_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnRevertSelected, this);
+			revert_all_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnRevertAll, this);
+			results_list->Bind(wxEVT_LIST_ITEM_SELECTED, [this](wxListEvent&) { UpdateRevertButtons(); });
+			results_list->Bind(wxEVT_LIST_ITEM_DESELECTED, [this](wxListEvent&) { UpdateRevertButtons(); });
 			Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& evt) {
 				if (busy) evt.Veto();
 				else evt.Skip();
