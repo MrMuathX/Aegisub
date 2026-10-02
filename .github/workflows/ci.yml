@@ -60,30 +60,9 @@ jobs:
             buildtype: release,
             args: -Db_pch=false
           }
-          - {
-            name: macOS x86_64 Debug,
-            os: macos-15-intel,
-            buildtype: debugoptimized,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
-          - {
-            name: macOS x86_64 Release,
-            os: macos-15-intel,
-            buildtype: release,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
-          - {
-            name: macOS arm64 Debug,
-            os: macos-15,
-            buildtype: debugoptimized,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
-          - {
-            name: macOS arm64 Release,
-            os: macos-15,
-            buildtype: release,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
+          # macOS builds removed: the Intel runners fail installing dependencies and
+          # tie up the limited macOS runner slots. The macOS steps below are kept
+          # (skipped) so the jobs can be re-added to this matrix later.
 
     steps:
       - uses: actions/checkout@v6
