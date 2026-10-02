@@ -76,6 +76,8 @@ namespace {
 		agi::Context *c;
 
 		wxChoice *provider_choice;
+		wxStaticText *key_label;
+		wxTextCtrl *key_text;
 		wxComboBox *model_combo;
 		wxButton *refresh_button;
 		wxChoice *scope_choice;
@@ -92,14 +94,37 @@ namespace {
 			cfg.provider = OPT_GET("AI/Provider")->GetString();
 			cfg.endpoint = OPT_GET("AI/Endpoints/" + cfg.provider)->GetString();
 			if (cfg.provider != "Ollama")
-				cfg.key = OPT_GET("AI/Keys/" + cfg.provider)->GetString();
+				cfg.key = trim(OPT_GET("AI/Keys/" + cfg.provider)->GetString());
 			cfg.model = from_wx(model_combo->GetValue());
 			return cfg;
+		}
+
+		/// Returns false and shows a message if the provider needs a key and none is set.
+		bool CheckKey(ai::Config const& cfg) {
+			if (cfg.provider == "Ollama" || !cfg.key.empty()) return true;
+			status->SetLabel(wxString::Format(_("Enter an API key for %s first."), to_wx(cfg.provider)));
+			key_text->SetFocus();
+			return false;
+		}
+
+		void LoadKey() {
+			std::string provider = OPT_GET("AI/Provider")->GetString();
+			bool needs_key = provider != "Ollama";
+			key_text->ChangeValue(needs_key ? to_wx(OPT_GET("AI/Keys/" + provider)->GetString()) : wxString());
+			key_text->Enable(needs_key && !busy);
+			key_label->Enable(needs_key);
+		}
+
+		void OnKeyChange(wxCommandEvent&) {
+			std::string provider = OPT_GET("AI/Provider")->GetString();
+			if (provider != "Ollama")
+				OPT_SET("AI/Keys/" + provider)->SetString(trim(from_wx(key_text->GetValue())));
 		}
 
 		void SetBusy(bool b) {
 			busy = b;
 			provider_choice->Enable(!b);
+			key_text->Enable(!b && OPT_GET("AI/Provider")->GetString() != "Ollama");
 			model_combo->Enable(!b);
 			refresh_button->Enable(!b);
 			scope_choice->Enable(!b);
@@ -132,6 +157,7 @@ namespace {
 			OPT_SET("AI/Provider")->SetString(providers[provider_choice->GetSelection()]);
 			model_combo->Clear();
 			model_combo->SetValue(to_wx(OPT_GET("AI/Model")->GetString()));
+			LoadKey();
 		}
 
 		void OnModelChange(wxCommandEvent&) {
@@ -144,9 +170,10 @@ namespace {
 
 		void OnRefresh(wxCommandEvent&) {
 			if (busy) return;
+			ai::Config cfg = MakeConfig();
+			if (!CheckKey(cfg)) return;
 			SetBusy(true);
 			status->SetLabel(_("Fetching models..."));
-			ai::Config cfg = MakeConfig();
 			agi::dispatch::Background().Async([=, this] {
 				std::vector<std::string> models;
 				std::string error;
@@ -187,6 +214,7 @@ namespace {
 				status->SetLabel(_("Choose a model first."));
 				return;
 			}
+			if (!CheckKey(cfg)) return;
 
 			std::string sys = from_wx(instruction->GetValue());
 			sys += system_suffix;
@@ -241,6 +269,10 @@ namespace {
 				if (from_wx(provider_names[i]) == cur_provider)
 					provider_choice->SetSelection((int)i);
 
+			key_label = new wxStaticText(this, -1, _("API key:"));
+			key_text = new wxTextCtrl(this, -1, "", wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
+			key_text->SetHint(_("Paste the provider's API key"));
+
 			model_combo = new wxComboBox(this, -1, to_wx(OPT_GET("AI/Model")->GetString()), wxDefaultPosition, FromDIP(wxSize(280, -1)), 0, nullptr, wxCB_DROPDOWN | wxTE_PROCESS_ENTER);
 			refresh_button = new wxButton(this, -1, _("Refresh"));
 			auto model_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -258,6 +290,8 @@ namespace {
 
 			grid->Add(new wxStaticText(this, -1, _("Provider:")), wxSizerFlags().Center().Left());
 			grid->Add(provider_choice, wxSizerFlags().Expand());
+			grid->Add(key_label, wxSizerFlags().Center().Left());
+			grid->Add(key_text, wxSizerFlags().Expand());
 			grid->Add(new wxStaticText(this, -1, _("Model:")), wxSizerFlags().Center().Left());
 			grid->Add(model_sizer, wxSizerFlags().Expand());
 			grid->Add(new wxStaticText(this, -1, _("Apply to:")), wxSizerFlags().Center().Left());
@@ -281,8 +315,10 @@ namespace {
 			main_sizer->Add(instruction, wxSizerFlags(1).Expand().Border());
 			main_sizer->Add(button_sizer, wxSizerFlags().Expand().Border());
 			SetSizerAndFit(main_sizer);
+			LoadKey();
 
 			provider_choice->Bind(wxEVT_CHOICE, &DialogAiAssistant::OnProviderChange, this);
+			key_text->Bind(wxEVT_TEXT, &DialogAiAssistant::OnKeyChange, this);
 			model_combo->Bind(wxEVT_TEXT, &DialogAiAssistant::OnModelChange, this);
 			model_combo->Bind(wxEVT_COMBOBOX, &DialogAiAssistant::OnModelChange, this);
 			action_choice->Bind(wxEVT_CHOICE, &DialogAiAssistant::OnActionChange, this);

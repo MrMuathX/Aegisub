@@ -72,6 +72,8 @@ namespace {
 			throw std::runtime_error(std::string("Network error: ") + curl_easy_strerror(rc));
 		if (status < 200 || status >= 300) {
 			std::string msg = result.substr(0, 500);
+			if (status == 401 || status == 403)
+				throw std::runtime_error("Authentication failed (HTTP " + std::to_string(status) + "): check the API key for this provider. " + msg);
 			throw std::runtime_error("HTTP error " + std::to_string(status) + ": " + msg);
 		}
 		return result;
