@@ -390,6 +390,40 @@ struct subtitle_save_as final : public Command {
 	}
 };
 
+struct subtitle_save_srt final : public Command {
+	CMD_NAME("subtitle/save/srt")
+	STR_MENU("Export as &SRT...")
+	STR_DISP("Export as SRT")
+	STR_HELP("Save a copy of the subtitles in SubRip (.srt) format")
+
+	void operator()(agi::Context *c) override {
+		c->videoController->Stop();
+
+		auto filename = SaveFileSelector(_("Export as SRT"), "Path/Last/Subtitles",
+			c->subsController->Filename().stem().string() + ".srt", "srt",
+			"SubRip (*.srt)|*.srt", c->parent);
+		if (filename.empty()) return;
+
+		try {
+			const SubtitleFormat *writer = SubtitleFormat::GetWriter(filename);
+			if (!writer) {
+				wxMessageBox(_("Cannot write SubRip files."), _("Error"), wxOK | wxICON_ERROR | wxCENTER, c->parent);
+				return;
+			}
+			// Write directly through the format writer so the current document
+			// (and its .ass styling) is left untouched -- this is an export, not
+			// a Save As that would switch the working file to SRT.
+			writer->ExportFile(c->ass.get(), filename, c->project->Timecodes());
+		}
+		catch (const agi::Exception& err) {
+			wxMessageBox(to_wx(err.GetMessage()), _("Error"), wxOK | wxICON_ERROR | wxCENTER, c->parent);
+		}
+		catch (...) {
+			wxMessageBox(_("Unknown error"), _("Error"), wxOK | wxICON_ERROR | wxCENTER, c->parent);
+		}
+	}
+};
+
 struct subtitle_select_all final : public Command {
 	CMD_NAME("subtitle/select/all")
 	STR_MENU("Select &All")
@@ -467,6 +501,7 @@ namespace cmd {
 		reg(std::make_unique<subtitle_properties>());
 		reg(std::make_unique<subtitle_save>());
 		reg(std::make_unique<subtitle_save_as>());
+		reg(std::make_unique<subtitle_save_srt>());
 		reg(std::make_unique<subtitle_select_all>());
 		reg(std::make_unique<subtitle_select_visible>());
 		reg(std::make_unique<subtitle_spellcheck>());

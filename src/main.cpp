@@ -36,6 +36,7 @@
 
 #include "command/command.h"
 #include "include/aegisub/hotkey.h"
+#include "include/aegisub/theme.h"
 
 #include "auto4_base.h"
 #include "auto4_lua_factory.h"
@@ -282,6 +283,11 @@ bool AegisubApp::OnInit() {
 
 		StartupLog("Install PNG handler");
 		wxImage::AddHandler(new wxPNGHandler);
+
+		// Apply the light/dark palette before any windows are created so that
+		// the grid and edit box pick up the themed colours on construction.
+		StartupLog("Initialize appearance theme");
+		theme::Init();
 
 		// Open main frame
 		StartupLog("Create main window");

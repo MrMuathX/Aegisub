@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [ master ]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish a release with this tag (e.g. v1.0.0). Leave empty to only build.'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -230,3 +235,61 @@ jobs:
           name: Source Tarball
           path: build/meson-dist/*.tar.xz
           if-no-files-found: error
+
+  # Publish the built installers/archives to a GitHub Release, either when a tag
+  # is pushed or when the workflow is dispatched with a release_tag input (in
+  # which case the tag is created from the built commit). Runs even if some
+  # build jobs failed so that a failure in one platform's packaging doesn't
+  # withhold the artifacts that did build.
+  release:
+    name: Publish Release
+    needs: build
+    if: always() && (github.ref_type == 'tag' || inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -e
+          mkdir -p release
+          find artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name '*.tar.xz' \) \
+            -exec cp -n {} release/ \;
+          if [ -z "$(ls -A release)" ]; then
+            echo "No build artifacts were produced; nothing to release." >&2
+            exit 1
+          fi
+          # Untagged builds name their outputs after the branch/commit; give the
+          # Windows assets predictable, tag-based names instead.
+          for f in release/Aegisub-*.exe; do
+            [ -e "$f" ] && mv -n "$f" "release/Aegisub-${RELEASE_TAG}-setup.exe" || true
+          done
+          if [ -e release/aegisub-portable-64.zip ]; then
+            mv -n release/aegisub-portable-64.zip "release/Aegisub-${RELEASE_TAG}-portable-64.zip"
+          fi
+          ls -lh release
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -e
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            # --target creates the tag from the built commit when it doesn't exist yet
+            gh release create "$RELEASE_TAG" release/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi

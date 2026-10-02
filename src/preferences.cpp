@@ -270,6 +270,11 @@ void Video(wxTreebook *book, Preferences *parent) {
 void Interface(wxTreebook *book, Preferences *parent) {
 	auto p = new OptionPage(book, parent, _("Interface"));
 
+	auto appearance = p->PageSizer(_("Appearance"));
+	const wxString appearance_arr[] = { _("Follow system"), _("Light"), _("Dark") };
+	wxArrayString appearance_modes(3, appearance_arr);
+	p->OptionChoice(appearance, _("Theme (requires restart for full effect)"), appearance_modes, "App/Appearance");
+
 	auto edit_box = p->PageSizer(_("Edit Box"));
 	p->OptionAdd(edit_box, _("Enable call tips"), "App/Call Tips");
 	p->OptionAdd(edit_box, _("Overwrite in time boxes"), "Subtitle/Time Edit/Insert Mode");
@@ -799,6 +804,32 @@ void Preferences::OnResetDefault(wxCommandEvent&) {
 	EndModal(-1);
 }
 
+/// AI assistant preferences page
+void AI(wxTreebook *book, Preferences *parent) {
+	auto p = new OptionPage(book, parent, _("AI Assistant"));
+
+	auto general = p->PageSizer(_("General"));
+	const wxString provider_arr[] = { "OpenAI", "OpenRouter", "Anthropic", "Google", "Ollama" };
+	wxArrayString providers(5, provider_arr);
+	p->OptionChoice(general, _("Provider"), providers, "AI/Provider", false);
+	p->OptionAdd(general, _("Model"), "AI/Model");
+
+	auto endpoints = p->PageSizer(_("Base URLs"));
+	p->OptionAdd(endpoints, _("OpenAI"), "AI/Endpoints/OpenAI");
+	p->OptionAdd(endpoints, _("OpenRouter"), "AI/Endpoints/OpenRouter");
+	p->OptionAdd(endpoints, _("Anthropic"), "AI/Endpoints/Anthropic");
+	p->OptionAdd(endpoints, _("Google"), "AI/Endpoints/Google");
+	p->OptionAdd(endpoints, _("Ollama"), "AI/Endpoints/Ollama");
+
+	auto keys = p->PageSizer(_("API Keys"));
+	p->OptionAdd(keys, _("OpenAI"), "AI/Keys/OpenAI");
+	p->OptionAdd(keys, _("OpenRouter"), "AI/Keys/OpenRouter");
+	p->OptionAdd(keys, _("Anthropic"), "AI/Keys/Anthropic");
+	p->OptionAdd(keys, _("Google"), "AI/Keys/Google");
+
+	p->SetSizerAndFit(p->sizer);
+}
+
 Preferences::Preferences(wxWindow *parent): wxDialog(parent, -1, _("Preferences"), wxDefaultPosition, wxSize(-1, -1), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER) {
 	SetIcons(GETICONS(options_button));
 
@@ -812,6 +843,7 @@ Preferences::Preferences(wxWindow *parent): wxDialog(parent, -1, _("Preferences"
 	new Interface_Hotkeys(book, this);
 	Backup(book, this);
 	Automation(book, this);
+	AI(book, this);
 	Advanced(book, this);
 	Advanced_Audio(book, this);
 	Advanced_Video(book, this);

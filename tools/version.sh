@@ -65,6 +65,9 @@ if test x$git_version_str != x; then
 else
   git_branch="$(git symbolic-ref HEAD 2> /dev/null)" || git_branch="(unnamed branch)"
   git_branch="${git_branch##refs/heads/}"
+  # The version string is used in generated file names, so replace path
+  # separators that branch names may contain (e.g. "feature/foo").
+  git_branch="$(echo "$git_branch" | tr '/\\:*?"<>|' '-')"
   git_hash=$(git rev-parse --short HEAD)
 
   git_version_str="${git_revision}-${git_branch}-${git_hash}"

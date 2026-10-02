@@ -57,8 +57,8 @@ VideoSlider::VideoSlider (wxWindow* parent, agi::Context *c)
 	c->project->AddKeyframesListener(&VideoSlider::KeyframesChanged, this),
 }))
 {
-	SetClientSize(20,25);
-	SetMinSize(wxSize(20, 25));
+	SetClientSize(FromDIP(wxSize(20, 25)));
+	SetMinSize(FromDIP(wxSize(20, 25)));
 	SetBackgroundStyle(wxBG_STYLE_PAINT);
 
 	c->videoSlider = this;

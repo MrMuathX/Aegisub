@@ -45,12 +45,27 @@ if (Test-Path $gitVersionHeaderPath) {
 
 $gitRevision = $lastSvnRevision + ((git -C $repositoryRootPath log --pretty=oneline "$($lastSvnHash)..HEAD" 2>$null | Measure-Object).Count)
 $gitBranch = git -C $repositoryRootPath symbolic-ref --short HEAD 2>$null
+# The version string ends up in the installer's OutputBaseFilename, so strip
+# characters that aren't valid in a file name. Branch names routinely contain
+# slashes (e.g. "feature/foo"), which otherwise abort the InnoSetup compile.
+if ($gitBranch) { $gitBranch = $gitBranch -replace '[\\/:*?"<>|]', '-' }
 $gitHash = git -C $repositoryRootPath rev-parse --short HEAD 2>$null
 $gitVersionString = $gitRevision, $gitBranch, $gitHash -join '-'
 $exactGitTag = git -C $repositoryRootPath describe --exact-match --tags 2>$null
 
 if ($gitVersionString -eq $version['BUILD_GIT_VERSION_STRING']) {
   exit 0
+}
+
+# Defaults for checkouts without a semver tag (e.g. forks that don't have the
+# release tags). This mirrors tools/version.sh, which always defines these so
+# that src/res/res.rc can compile. Without them the Windows resource compiler
+# fails with "RC2104: undefined keyword or key name: RESOURCE_BASE_VERSION".
+if (-not $version.ContainsKey('INSTALLER_VERSION')) {
+  $version['INSTALLER_VERSION'] = '0.0.0'
+}
+if (-not $version.ContainsKey('RESOURCE_BASE_VERSION')) {
+  $version['RESOURCE_BASE_VERSION'] = @(0, 0, 0)
 }
 
 if ($exactGitTag -match $semVerMatch) {

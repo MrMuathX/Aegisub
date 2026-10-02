@@ -24,6 +24,16 @@
 #include <wx/intl.h>
 #include <wx/mstream.h>
 
+namespace {
+	wxImage load_res_image(const unsigned char *buff, size_t size, int dir) {
+		wxMemoryInputStream mem(buff, size);
+		wxImage img(mem);
+		if (dir == wxLayout_RightToLeft)
+			img = img.Mirror();
+		return img;
+	}
+}
+
 wxBitmap libresrc_getimage(const unsigned char *buff, size_t size, int dir) {
 	wxMemoryInputStream mem(buff, size);
 	if (dir != wxLayout_RightToLeft)
@@ -50,7 +60,7 @@ wxBitmapBundle libresrc_getbitmapbundle(const LibresrcBlob *images, size_t count
 	wxVector<wxBitmap> bitmaps;
 	bitmaps.reserve(count);
 	for (size_t i = 0; i < count; i++) {
-		bitmaps.push_back(libresrc_getimage(images[i].data, images[i].size, dir));
+		bitmaps.push_back(wxBitmap(load_res_image(images[i].data, images[i].size, dir)));
 		bitmaps.back().SetScaleFactor(double(images[i].scale) / height);
 	}
 
