@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,13 @@ namespace ai {
 		std::string endpoint; ///< Base URL, e.g. "https://api.openai.com/v1"
 		std::string key;      ///< API key (may be empty, e.g. for Ollama)
 		std::string model;    ///< Model id
+		/// If set, an in-flight request is aborted as soon as this becomes true.
+		std::atomic<bool> const* cancel = nullptr;
+	};
+
+	/// Thrown when a request is aborted through Config::cancel.
+	struct Cancelled final : std::runtime_error {
+		Cancelled() : std::runtime_error("Cancelled") { }
 	};
 
 	/// Send a single-turn chat request and return the assistant's reply text.
