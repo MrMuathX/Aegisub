@@ -13,6 +13,13 @@ on:
         required: false
         default: ''
 
+# A new push to a pull request cancels that PR's still-running build. Pushes to
+# master, tags and manual (release) runs each get their own group, so they are
+# never cancelled by one another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     name: ${{ matrix.config.name }}
@@ -60,30 +67,9 @@ jobs:
             buildtype: release,
             args: -Db_pch=false
           }
-          - {
-            name: macOS x86_64 Debug,
-            os: macos-15-intel,
-            buildtype: debugoptimized,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
-          - {
-            name: macOS x86_64 Release,
-            os: macos-15-intel,
-            buildtype: release,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
-          - {
-            name: macOS arm64 Debug,
-            os: macos-15,
-            buildtype: debugoptimized,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
-          - {
-            name: macOS arm64 Release,
-            os: macos-15,
-            buildtype: release,
-            args: -Ddefault_library=static -Dbuild_osx_bundle=true -Dlocal_boost=true --force-fallback-for=ffms2
-          }
+          # macOS builds removed: the Intel runners fail installing dependencies and
+          # tie up the limited macOS runner slots. The macOS steps below are kept
+          # (skipped) so the jobs can be re-added to this matrix later.
 
     steps:
       - uses: actions/checkout@v6
@@ -98,6 +84,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools
           pip install meson
+
+      # Cache compiler output between runs in the GitHub Actions cache. Meson
+      # picks up sccache automatically once it is on PATH. Not used for MSVC:
+      # there it got ~0% hits, hundreds of cache write errors, and slowed the
+      # Windows build from ~30 to ~53 minutes.
+      - name: Setup sccache
+        if: ${{ !matrix.config.msvc }}
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Enable sccache
+        if: ${{ !matrix.config.msvc }}
+        shell: bash
+        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
         # Taken from https://github.com/libass/libass/blob/0.17.5/.github/workflows/meson.yml#L118-L125
       - name: Find Visual Studio
@@ -155,6 +154,12 @@ jobs:
         run: |
           ${{ matrix.config.devenv }}
           meson compile -C build
+
+      - name: sccache stats
+        if: ${{ !matrix.config.msvc }}
+        shell: bash
+        continue-on-error: true
+        run: '"$SCCACHE_PATH" --show-stats'
 
       - name: Run test
         run: |
