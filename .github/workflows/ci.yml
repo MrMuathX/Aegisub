@@ -86,11 +86,15 @@ jobs:
           pip install meson
 
       # Cache compiler output between runs in the GitHub Actions cache. Meson
-      # picks up sccache automatically once it is on PATH.
+      # picks up sccache automatically once it is on PATH. Not used for MSVC:
+      # there it got ~0% hits, hundreds of cache write errors, and slowed the
+      # Windows build from ~30 to ~53 minutes.
       - name: Setup sccache
+        if: ${{ !matrix.config.msvc }}
         uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Enable sccache
+        if: ${{ !matrix.config.msvc }}
         shell: bash
         run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
@@ -152,6 +156,7 @@ jobs:
           meson compile -C build
 
       - name: sccache stats
+        if: ${{ !matrix.config.msvc }}
         shell: bash
         continue-on-error: true
         run: '"$SCCACHE_PATH" --show-stats'
