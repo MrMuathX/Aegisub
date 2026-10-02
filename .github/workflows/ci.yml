@@ -133,6 +133,9 @@ jobs:
         if: startsWith(matrix.config.os, 'macos-')
         run: |
           brew update
+          # Intel runner images ship openssl@1.1 linked into /usr/local/bin, which
+          # blocks linking the openssl@3 that libass pulls in and fails the install.
+          brew unlink openssl@1.1 || true
           brew install ninja
           brew install libass zlib ffms2 fftw hunspell
           brew install pulseaudio  # NO OpenAL in github CI

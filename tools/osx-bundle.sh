@@ -53,7 +53,10 @@ echo
 echo "---- Installing files ----"
 CURRENT_DIR=`pwd`
 cd ${BUILD_DIR}
-meson install --skip-subprojects luajit
+# Subprojects are linked statically, so their libraries and headers are not
+# needed in the bundle. Installing them would target the global prefix
+# (/usr/local), which is not writable on arm64 runners.
+meson install --skip-subprojects luajit,wxWidgets
 cd ${CURRENT_DIR}
 
 echo
