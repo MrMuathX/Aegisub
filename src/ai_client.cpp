@@ -35,9 +35,18 @@ namespace {
 		return size * nmemb;
 	}
 
+	int progress_cb(void *cancel, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+		auto flag = static_cast<std::atomic<bool> const*>(cancel);
+		return flag && *flag ? 1 : 0;
+	}
+
 	// Perform an HTTP request. If body is non-null the request is a POST with
-	// that body, otherwise a GET. Returns the response body; throws on error.
-	std::string http_request(std::string const& url, std::vector<std::string> const& headers, std::string const* body) {
+	// that body, otherwise a GET. Returns the response body; throws on error,
+	// or ai::Cancelled if the cancel flag is raised mid-request.
+	std::string http_request(std::string const& url, std::vector<std::string> const& headers, std::string const* body, std::atomic<bool> const* cancel) {
+		if (cancel && *cancel)
+			throw ai::Cancelled();
+
 		CURL *curl = curl_easy_init();
 		if (!curl)
 			throw std::runtime_error("Could not initialize network library.");
@@ -60,6 +69,11 @@ namespace {
 		std::string result;
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result);
+		if (cancel) {
+			curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+			curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_cb);
+			curl_easy_setopt(curl, CURLOPT_XFERINFODATA, const_cast<std::atomic<bool> *>(cancel));
+		}
 
 		CURLcode rc = curl_easy_perform(curl);
 		long status = 0;
@@ -68,6 +82,8 @@ namespace {
 			curl_slist_free_all(hdr);
 		curl_easy_cleanup(curl);
 
+		if (rc == CURLE_ABORTED_BY_CALLBACK)
+			throw ai::Cancelled();
 		if (rc != CURLE_OK)
 			throw std::runtime_error(std::string("Network error: ") + curl_easy_strerror(rc));
 		if (status < 200 || status >= 300) {
@@ -156,7 +172,7 @@ namespace ai {
 		}
 
 		std::string request = os.str();
-		std::string response = http_request(url, headers, &request);
+		std::string response = http_request(url, headers, &request, cfg.cancel);
 
 		try {
 			json::UnknownElement ue = parse(response);
@@ -207,7 +223,7 @@ namespace ai {
 			url = cfg.endpoint + "/models?key=" + cfg.key;
 		}
 
-		std::string response = http_request(url, headers, nullptr);
+		std::string response = http_request(url, headers, nullptr, cfg.cancel);
 
 		std::vector<std::string> models;
 		try {

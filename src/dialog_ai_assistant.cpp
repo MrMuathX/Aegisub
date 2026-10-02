@@ -27,6 +27,7 @@
 
 #include <libaegisub/dispatch.h>
 
+#include <atomic>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,6 +36,7 @@
 #include <wx/choice.h>
 #include <wx/combobox.h>
 #include <wx/dialog.h>
+#include <wx/gauge.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
@@ -84,10 +86,14 @@ namespace {
 		wxChoice *action_choice;
 		wxTextCtrl *instruction;
 		wxButton *run_button;
+		wxButton *stop_button;
+		wxGauge *progress;
 		wxButton *cancel_button;
 		wxStaticText *status;
 
 		bool busy = false;
+		/// Raised by Stop; read by the background worker and the HTTP client.
+		std::atomic<bool> cancel_requested{false};
 
 		ai::Config MakeConfig() {
 			ai::Config cfg;
@@ -96,6 +102,7 @@ namespace {
 			if (cfg.provider != "Ollama")
 				cfg.key = trim(OPT_GET("AI/Keys/" + cfg.provider)->GetString());
 			cfg.model = from_wx(model_combo->GetValue());
+			cfg.cancel = &cancel_requested;
 			return cfg;
 		}
 
@@ -132,6 +139,18 @@ namespace {
 			instruction->Enable(!b);
 			run_button->Enable(!b);
 			cancel_button->Enable(!b);
+			stop_button->Enable(b);
+			if (b) {
+				cancel_requested = false;
+				progress->SetValue(0);
+			}
+		}
+
+		void OnStop(wxCommandEvent&) {
+			if (!busy || cancel_requested) return;
+			cancel_requested = true;
+			stop_button->Enable(false);
+			status->SetLabel(_("Stopping..."));
 		}
 
 		std::vector<AssDialogue *> TargetLines() {
@@ -173,18 +192,27 @@ namespace {
 			ai::Config cfg = MakeConfig();
 			if (!CheckKey(cfg)) return;
 			SetBusy(true);
+			progress->Pulse();
 			status->SetLabel(_("Fetching models..."));
 			agi::dispatch::Background().Async([=, this] {
 				std::vector<std::string> models;
 				std::string error;
+				bool cancelled = false;
 				try {
 					models = ai::ListModels(cfg);
+				}
+				catch (ai::Cancelled const&) {
+					cancelled = true;
 				}
 				catch (std::exception const& e) {
 					error = e.what();
 				}
 				agi::dispatch::Main().Async([=, this] {
-					if (!error.empty()) {
+					progress->SetValue(0);
+					if (cancelled) {
+						status->SetLabel(_("Stopped."));
+					}
+					else if (!error.empty()) {
 						status->SetLabel(to_wx(error));
 					}
 					else {
@@ -219,33 +247,53 @@ namespace {
 			std::string sys = from_wx(instruction->GetValue());
 			sys += system_suffix;
 
+			const int total = (int)lines.size();
 			SetBusy(true);
-			status->SetLabel(wxString::Format(_("Processing %d line(s)..."), (int)lines.size()));
+			progress->SetRange(total);
+			status->SetLabel(wxString::Format(_("Processing line 1 of %d..."), total));
 
 			agi::dispatch::Background().Async([=, this] {
 				std::vector<std::pair<AssDialogue *, std::string>> edits;
 				std::string error;
+				bool cancelled = false;
+				int done = 0;
 				try {
 					for (auto line : lines) {
+						if (cancel_requested) {
+							cancelled = true;
+							break;
+						}
 						std::string in = line->Text.get();
 						std::string out = trim(ai::Chat(cfg, sys, in));
 						if (!out.empty())
 							edits.emplace_back(line, out);
+						++done;
+						agi::dispatch::Main().Async([=, this] {
+							progress->SetValue(done);
+							if (done < total && !cancel_requested)
+								status->SetLabel(wxString::Format(_("Processing line %d of %d..."), done + 1, total));
+						});
 					}
+				}
+				catch (ai::Cancelled const&) {
+					cancelled = true;
 				}
 				catch (std::exception const& e) {
 					error = e.what();
 				}
 				agi::dispatch::Main().Async([=, this] {
-					if (!error.empty()) {
-						status->SetLabel(to_wx(error));
-					}
-					else {
-						for (auto& e : edits)
-							e.first->Text = e.second;
+					// Keep the lines that finished before a stop or error.
+					for (auto& e : edits)
+						e.first->Text = e.second;
+					if (!edits.empty())
 						c->ass->Commit(_("AI edit"), AssFile::COMMIT_DIAG_TEXT);
-						status->SetLabel(wxString::Format(_("Updated %d line(s)."), (int)edits.size()));
-					}
+
+					if (cancelled)
+						status->SetLabel(wxString::Format(_("Stopped after %d of %d line(s); %d updated."), done, total, (int)edits.size()));
+					else if (!error.empty())
+						status->SetLabel(wxString::Format(_("Error after %d of %d line(s); %d updated: %s"), done, total, (int)edits.size(), to_wx(error)));
+					else
+						status->SetLabel(wxString::Format(_("Updated %d of %d line(s)."), (int)edits.size(), total));
 					SetBusy(false);
 				});
 			});
@@ -302,17 +350,22 @@ namespace {
 			instruction = new wxTextCtrl(this, -1, to_wx(actions[0].prompt), wxDefaultPosition, FromDIP(wxSize(-1, 90)), wxTE_MULTILINE);
 
 			run_button = new wxButton(this, -1, _("Run"));
+			stop_button = new wxButton(this, -1, _("Stop"));
+			stop_button->Enable(false);
 			status = new wxStaticText(this, -1, "");
+			progress = new wxGauge(this, -1, 1, wxDefaultPosition, FromDIP(wxSize(-1, 12)));
 
 			auto button_sizer = new wxBoxSizer(wxHORIZONTAL);
 			button_sizer->Add(status, wxSizerFlags(1).Center().Border(wxRIGHT));
 			button_sizer->Add(run_button, wxSizerFlags().Border(wxRIGHT));
+			button_sizer->Add(stop_button, wxSizerFlags().Border(wxRIGHT));
 			cancel_button = new wxButton(this, wxID_CANCEL, _("Close"));
 			button_sizer->Add(cancel_button);
 
 			main_sizer->Add(grid, wxSizerFlags().Expand().Border());
 			main_sizer->Add(new wxStaticText(this, -1, _("Instruction:")), wxSizerFlags().Border(wxLEFT | wxRIGHT));
 			main_sizer->Add(instruction, wxSizerFlags(1).Expand().Border());
+			main_sizer->Add(progress, wxSizerFlags().Expand().Border(wxLEFT | wxRIGHT));
 			main_sizer->Add(button_sizer, wxSizerFlags().Expand().Border());
 			SetSizerAndFit(main_sizer);
 			LoadKey();
@@ -324,6 +377,7 @@ namespace {
 			action_choice->Bind(wxEVT_CHOICE, &DialogAiAssistant::OnActionChange, this);
 			refresh_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnRefresh, this);
 			run_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnRun, this);
+			stop_button->Bind(wxEVT_BUTTON, &DialogAiAssistant::OnStop, this);
 			Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& evt) {
 				if (busy) evt.Veto();
 				else evt.Skip();
