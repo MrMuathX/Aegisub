@@ -13,6 +13,13 @@ on:
         required: false
         default: ''
 
+# A new push to a pull request cancels that PR's still-running build. Pushes to
+# master, tags and manual (release) runs each get their own group, so they are
+# never cancelled by one another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     name: ${{ matrix.config.name }}
@@ -78,6 +85,15 @@ jobs:
           python -m pip install --upgrade pip setuptools
           pip install meson
 
+      # Cache compiler output between runs in the GitHub Actions cache. Meson
+      # picks up sccache automatically once it is on PATH.
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Enable sccache
+        shell: bash
+        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
         # Taken from https://github.com/libass/libass/blob/0.17.5/.github/workflows/meson.yml#L118-L125
       - name: Find Visual Studio
         if: matrix.config.msvc
@@ -134,6 +150,11 @@ jobs:
         run: |
           ${{ matrix.config.devenv }}
           meson compile -C build
+
+      - name: sccache stats
+        shell: bash
+        continue-on-error: true
+        run: '"$SCCACHE_PATH" --show-stats'
 
       - name: Run test
         run: |
